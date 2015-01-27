@@ -165,7 +165,7 @@ func (w *Watcher) init() error {
 	}
 
 	// Setup the channels
-	w.DataCh = make(chan *View)
+	w.DataCh = make(chan *View, 50)
 	w.ErrCh = make(chan error)
 	w.FinishCh = make(chan struct{})
 

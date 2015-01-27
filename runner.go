@@ -129,31 +129,42 @@ func (r *Runner) Start() {
 			return
 		}
 
-		select {
-		case data := <-r.watcher.DataCh:
-			r.Receive(data.Dependency, data.Data)
-		case err := <-r.watcher.ErrCh:
-			r.ErrCh <- err
-			return
-		case tmpl := <-r.quiescenceCh:
-			// Remove the quiescence for this template from the map. This will force
-			// the upcoming Run call to actually evaluate and render the template.
-			delete(r.quiescenceMap, tmpl.Path)
-		case <-r.minTimer:
-			log.Printf("[INFO] (runner) quiescence minTimer fired")
-			r.minTimer, r.maxTimer = nil, nil
-		case <-r.maxTimer:
-			log.Printf("[INFO] (runner) quiescence maxTimer fired")
-			r.minTimer, r.maxTimer = nil, nil
-		case err := <-r.watcher.ErrCh:
-			r.ErrCh <- err
-			return
-		case <-r.watcher.FinishCh:
-			log.Printf("[INFO] (runner) watcher reported finish")
-			return
-		case <-r.DoneCh:
-			log.Printf("[INFO] (runner) received finish")
-			return
+		var batch <-chan time.Time
+
+	outer:
+		for {
+			select {
+			case data := <-r.watcher.DataCh:
+				r.Receive(data.Dependency, data.Data)
+			case err := <-r.watcher.ErrCh:
+				r.ErrCh <- err
+				return
+			case tmpl := <-r.quiescenceCh:
+				// Remove the quiescence for this template from the map. This will force
+				// the upcoming Run call to actually evaluate and render the template.
+				delete(r.quiescenceMap, tmpl.Path)
+			case <-r.minTimer:
+				log.Printf("[INFO] (runner) quiescence minTimer fired")
+				r.minTimer, r.maxTimer = nil, nil
+			case <-r.maxTimer:
+				log.Printf("[INFO] (runner) quiescence maxTimer fired")
+				r.minTimer, r.maxTimer = nil, nil
+			case err := <-r.watcher.ErrCh:
+				r.ErrCh <- err
+				return
+			case <-r.watcher.FinishCh:
+				log.Printf("[INFO] (runner) watcher reported finish")
+				return
+			case <-r.DoneCh:
+				log.Printf("[INFO] (runner) received finish")
+				return
+			case <-batch:
+				break outer
+			}
+
+			if batch == nil {
+				batch = time.After(500 * time.Millisecond)
+			}
 		}
 
 		// If we got this far, that means we got new data or one of the timers fired,
